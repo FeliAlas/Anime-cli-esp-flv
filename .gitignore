@@ -12,7 +12,10 @@ Thumbs.db
 
 # Executables (Opcional: puedes quitarlo si quieres subir obscura.exe)
 # obscura.exe 
+aria2c.exe
 
 # Temporary download files
 *.part
+*.part*
 *.ytdl
+*.aria2
