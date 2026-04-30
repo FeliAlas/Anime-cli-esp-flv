@@ -5,12 +5,16 @@ Sin dependencias pesadas: usa requests + Obscura (solo para bypass Cloudflare).
 
 import re
 import os
+import sys
 import subprocess
 import requests
 
 # Ruta al ejecutable de Obscura (junto al script)
-OBSCURA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "obscura.exe")
-
+if getattr(sys, 'frozen', False):
+    _BASE_DIR = sys._MEIPASS
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OBSCURA_PATH = os.path.join(_BASE_DIR, "obscura.exe")
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -250,10 +254,23 @@ def extraer_url(servidor: str, embed_url: str) -> str | None:
     Extrae la URL directa del video desde la URL embed de un servidor.
     Retorna la URL del stream (MP4 o M3U8) o None si no se puede extraer.
     """
+    # 1. Resolver redireccionadores de MonosChinos
+    if "re.animepelix.net/redirect.php?id=" in embed_url:
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(embed_url)
+        qs = parse_qs(parsed.query)
+        if "id" in qs:
+            embed_url = qs["id"][0]
+            
+    # 2. Intentar con extractores específicos
     extractor = _EXTRACTORES.get(servidor)
     if extractor:
-        return extractor(embed_url)
-    return None
+        res = extractor(embed_url)
+        if res: return res
+        
+    # 3. Fallback a yt-dlp para servidores comunes
+    # (StreamTape, Voex, Mp4Upload, Uqload, YourUpload, Mega, etc.)
+    return extraer_con_ytdlp(embed_url)
 
 
 def servidores_soportados() -> list[str]:

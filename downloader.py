@@ -7,10 +7,12 @@ yt-dlp con concurrent_fragment_downloads mejorado para M3U8.
 
 import os
 import shutil
+import sys
 import subprocess
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
+_BASE_DIR = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
 from rich.progress import (
     Progress, TextColumn, BarColumn, DownloadColumn,
     TransferSpeedColumn, TimeRemainingColumn
@@ -71,7 +73,7 @@ def _detectar_aria2c() -> bool:
     rutas_comunes = [
         os.path.join(os.environ.get("ProgramFiles", ""), "aria2", "aria2c.exe"),
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "aria2", "aria2c.exe"),
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "aria2c.exe"),
+        os.path.join(_BASE_DIR, "aria2c.exe"),
     ]
     for ruta in rutas_comunes:
         if ruta and os.path.isfile(ruta):
@@ -146,9 +148,9 @@ def _descargar_aria2c(url: str, filepath: str, tipo: str = "MP4") -> bool:
 
     directorio = os.path.dirname(filepath)
     nombre_archivo = os.path.basename(filepath)
-
+    aria2c_bin = shutil.which("aria2c") or os.path.join(_BASE_DIR, "aria2c.exe")
     cmd = [
-        "aria2c",
+        aria2c_bin,
         url,
         f"--dir={directorio}",
         f"--out={nombre_archivo}",

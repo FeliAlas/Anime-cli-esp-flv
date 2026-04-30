@@ -143,6 +143,7 @@ def mostrar_resultados(resultados: list[dict]) -> dict | None:
     )
     tabla.add_column("#",       style="dim", width=4, justify="right")
     tabla.add_column("Título",  style="bold white", min_width=25)
+    tabla.add_column("Proveedor", style="magenta", width=12)
     tabla.add_column("Tipo",    style="cyan", width=10)
     tabla.add_column("Rating",  style="yellow", width=8, justify="center")
     tabla.add_column("Sinopsis",style="dim", max_width=45)
@@ -156,6 +157,7 @@ def mostrar_resultados(resultados: list[dict]) -> dict | None:
         tabla.add_row(
             str(i),
             anime["titulo"],
+            anime.get("proveedor", "AnimeFLV"),
             anime["tipo"],
             anime["rating"],
             sinopsis,
@@ -327,7 +329,7 @@ def accionar_episodio(info: dict, numero_ep: int):
     ) as prog:
         prog.add_task("Obteniendo servidores de video...", total=None)
         try:
-            servidores = scraper.obtener_servidores(info["anime_id"], numero_ep)
+            servidores = scraper.obtener_servidores(info, numero_ep)
         except ConnectionError as e:
             console.print(f"[red]❌ Error:[/red] {e}")
             esperar_enter()
@@ -421,7 +423,7 @@ def main():
                     # Para el home, como solo tenemos el slug y ep, 
                     # lo mejor es tratar de obtener info completa primero para tener la lista de episodios
                     # y permitir el flujo de "siguiente"
-                    anime_falso = {"id": r["serie_slug"], "titulo": r["titulo"]}
+                    anime_falso = {"id": r["serie_slug"], "titulo": r["titulo"], "proveedor": r.get("proveedor", "AnimeFLV")}
                     seleccion = pantalla_anime(anime_falso)
                     if seleccion:
                         info, num_ep = seleccion
