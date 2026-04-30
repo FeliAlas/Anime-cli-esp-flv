@@ -24,4 +24,4 @@ Los capítulos descargados se guardarán automáticamente en la carpeta `Descarg
 ---
 ¡Disfruta tu anime sin publicidad ni distracciones!
 
-PD: La descarga de capitulos no está del todo pulida, funciona pero va con retraso, falta por mejorar.
+
