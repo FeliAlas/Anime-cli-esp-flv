@@ -6,6 +6,7 @@ Uso: python app.py
 """
 
 import sys
+import re
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -184,8 +185,9 @@ def mostrar_resultados(resultados: list[dict]) -> dict | None:
 # PANTALLA: DETALLE DEL ANIME + EPISODIOS
 # ─────────────────────────────────────────
 
-def pantalla_anime(anime_elegido: dict) -> tuple[dict, int] | None:
-    """Muestra info del anime y permite elegir un episodio. Retorna (info, numero_ep)."""
+def pantalla_anime(anime_elegido: dict) -> tuple[dict, int] | str | None:
+    """Muestra info del anime y permite elegir un episodio.
+    Retorna (info, numero_ep), 'temporada' con info adjuntada, o None."""
     limpiar()
     cabecera()
 
@@ -197,7 +199,7 @@ def pantalla_anime(anime_elegido: dict) -> tuple[dict, int] | None:
     ) as prog:
         prog.add_task(f"Cargando [cyan]{anime_elegido['titulo']}[/cyan]...", total=None)
         try:
-            info = scraper.obtener_info_anime(anime_elegido["id"])
+            info = scraper.obtener_info_anime(anime_elegido)
         except ConnectionError as e:
             console.print(f"\n[red]❌ Error:[/red] {e}")
             esperar_enter()
@@ -244,13 +246,25 @@ def pantalla_anime(anime_elegido: dict) -> tuple[dict, int] | None:
         _mostrar_episodios_tabla(episodios)
 
     separador()
+    console.print("[bold yellow]t.[/bold yellow] Descargar temporada completa")
+    separador()
 
     try:
-        numero_ep = IntPrompt.ask(
-            f"[bold]¿Qué episodio ver?[/bold] [dim](0 para volver)[/dim]",
-            default=0,
+        entrada = Prompt.ask(
+            f"[bold]¿Qué episodio ver?[/bold] [dim](número, 't' para temporada, 0 para volver)[/dim]",
+            default="0",
         )
     except KeyboardInterrupt:
+        return None
+
+    if entrada.lower() == "t":
+        return ("temporada", info)
+
+    try:
+        numero_ep = int(entrada)
+    except ValueError:
+        console.print("[red]Entrada no válida.[/red]")
+        esperar_enter()
         return None
 
     if numero_ep == 0:
@@ -384,6 +398,106 @@ def accionar_episodio(info: dict, numero_ep: int):
                 accionar_episodio(info, siguiente)
 
 
+def descargar_temporada(info: dict):
+    """Descarga todos los episodios de la temporada uno por uno."""
+    episodios = info.get("episodios", [])
+    if not episodios:
+        console.print("[red]No hay episodios para descargar.[/red]")
+        esperar_enter()
+        return
+
+    total = len(episodios)
+    limpiar()
+    cabecera()
+    console.print(Panel(
+        f"[bold white]Descarga de Temporada Completa[/bold white]\n\n"
+        f"Anime: [cyan]{info['titulo']}[/cyan]\n"
+        f"Episodios: [yellow]{total}[/yellow] "
+        f"(del {episodios[0]['numero']} al {episodios[-1]['numero']})",
+        border_style="green",
+        padding=(1, 2),
+    ))
+    separador()
+
+    confirmar = Prompt.ask(
+        f"[bold]¿Descargar los {total} episodios?[/bold] (s/n)",
+        default="s"
+    ).lower()
+    if confirmar != "s":
+        return
+
+    exitosos = 0
+    fallidos = []
+
+    for i, ep in enumerate(episodios, 1):
+        numero_ep = ep["numero"]
+        titulo = f"{info['titulo']} - Episodio {numero_ep}"
+
+        console.print(f"\n[bold]━━━ [{i}/{total}] Episodio {numero_ep} ━━━[/bold]")
+
+        # 1. Obtener servidores
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+            console=console,
+        ) as prog:
+            prog.add_task(f"Obteniendo servidores del episodio {numero_ep}...", total=None)
+            try:
+                servidores = scraper.obtener_servidores(info, numero_ep)
+            except Exception as e:
+                console.print(f"[red]  ✗ Error obteniendo servidores: {e}[/red]")
+                fallidos.append(numero_ep)
+                continue
+
+        if not servidores:
+            console.print(f"[red]  ✗ Sin servidores para episodio {numero_ep}[/red]")
+            fallidos.append(numero_ep)
+            continue
+
+        # 2. Resolver enlace
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+            console=console,
+        ) as prog:
+            prog.add_task("Resolviendo enlace directo...", total=None)
+            enlace = player.intentar_extraer(servidores)
+
+        if not enlace:
+            console.print(f"[red]  ✗ No se pudo extraer URL del episodio {numero_ep}[/red]")
+            fallidos.append(numero_ep)
+            continue
+
+        # 3. Descargar
+        try:
+            exito = descargar_video(enlace, info['titulo'], numero_ep)
+            if exito:
+                exitosos += 1
+                console.print(f"[green]  ✓ Episodio {numero_ep} descargado[/green]")
+            else:
+                fallidos.append(numero_ep)
+                console.print(f"[red]  ✗ Falló descarga del episodio {numero_ep}[/red]")
+        except KeyboardInterrupt:
+            console.print("\n[yellow]⚠ Descarga de temporada cancelada por el usuario.[/yellow]")
+            break
+        except Exception as e:
+            console.print(f"[red]  ✗ Error descargando episodio {numero_ep}: {e}[/red]")
+            fallidos.append(numero_ep)
+
+    # Resumen final
+    separador()
+    console.print(Panel(
+        f"[bold]Resumen de Descarga[/bold]\n\n"
+        f"[green]✓ Exitosos:[/green] {exitosos}/{total}\n"
+        + (f"[red]✗ Fallidos:[/red] {', '.join(map(str, fallidos))}" if fallidos else "[green]¡Todos descargados correctamente![/green]"),
+        border_style="cyan",
+        padding=(1, 2),
+    ))
+    esperar_enter()
+
+
 # ─────────────────────────────────────────
 # LOOP PRINCIPAL
 # ─────────────────────────────────────────
@@ -407,8 +521,11 @@ def main():
                 seleccion = pantalla_anime(anime_elegido)
                 if not seleccion: continue
                 
-                info, numero_ep = seleccion
-                accionar_episodio(info, numero_ep)
+                if isinstance(seleccion, tuple) and seleccion[0] == "temporada":
+                    descargar_temporada(seleccion[1])
+                else:
+                    info, numero_ep = seleccion
+                    accionar_episodio(info, numero_ep)
                 
             elif opc.isdigit() and recientes:
                 idx = int(opc) - 1
@@ -426,8 +543,11 @@ def main():
                     anime_falso = {"id": r["serie_slug"], "titulo": r["titulo"], "proveedor": r.get("proveedor", "AnimeFLV")}
                     seleccion = pantalla_anime(anime_falso)
                     if seleccion:
-                        info, num_ep = seleccion
-                        accionar_episodio(info, num_ep)
+                        if isinstance(seleccion, tuple) and seleccion[0] == "temporada":
+                            descargar_temporada(seleccion[1])
+                        else:
+                            info, num_ep = seleccion
+                            accionar_episodio(info, num_ep)
                 else:
                     console.print("[red]Opción inválida.[/red]")
                     esperar_enter()
